@@ -1,0 +1,227 @@
+{
+  "meta": {
+    "project": "MiniDB",
+    "version": "0.1.0",
+    "last_updated": "2026-02-16T16:40:00+05:30",
+    "description": "Feature capability registry for MiniDB. Tracks implementation status, files, tests, and verification state. A feature can only be marked COMPLETE if implementation + tests exist, and VERIFIED only if verify_build.py confirms functionality."
+  },
+  "development_order": [
+    "verification_infrastructure",
+    "storage_engine",
+    "catalog_metadata",
+    "sql_parser",
+    "query_planner",
+    "execution_engine",
+    "indexing",
+    "transactions",
+    "concurrency",
+    "cli_interface"
+  ],
+  "features": {
+    "verification_infrastructure": {
+      "name": "Verification Infrastructure",
+      "module": "features, build_integrity, verification",
+      "status": "IN_PROGRESS",
+      "description": "Feature registry, checksum system, verify_build.py, project_state.md",
+      "implementation_files": [
+        "features/feature_registry.json",
+        "build_integrity/checksums.json",
+        "verify_build.py",
+        "project_state.md",
+        "verification/__init__.py",
+        "verification/checksums.py",
+        "verification/registry.py"
+      ],
+      "unit_tests_present": false,
+      "integration_tests_present": false,
+      "last_verified_timestamp": null,
+      "verification_method": "verify_build.py --self-check",
+      "checksum_of_related_code": {},
+      "checksum_of_tests": {},
+      "dependencies": []
+    },
+    "storage_engine": {
+      "name": "Storage Engine",
+      "module": "storage",
+      "status": "IN_PROGRESS",
+      "description": "Page-based binary storage (4KB pages), data types, schema, serialization, CRUD operations, buffer manager",
+      "implementation_files": [
+        "storage/__init__.py",
+        "storage/types.py",
+        "storage/schema.py",
+        "storage/page.py",
+        "storage/table.py",
+        "storage/serializer.py",
+        "storage/buffer.py"
+      ],
+      "unit_tests_present": true,
+      "integration_tests_present": true,
+      "last_verified_timestamp": null,
+      "verification_method": "pytest tests/test_storage.py",
+      "checksum_of_related_code": {},
+      "checksum_of_tests": {},
+      "dependencies": [
+        "verification_infrastructure"
+      ]
+    },
+    "catalog_metadata": {
+      "name": "Catalog Metadata",
+      "module": "catalog",
+      "status": "IN_PROGRESS",
+      "description": "Database catalog for table/schema/index metadata, persisted to catalog.dat",
+      "implementation_files": [
+        "catalog/__init__.py",
+        "catalog/catalog.py"
+      ],
+      "unit_tests_present": true,
+      "integration_tests_present": true,
+      "last_verified_timestamp": null,
+      "verification_method": "pytest tests/test_storage.py -k TestCatalog",
+      "checksum_of_related_code": {},
+      "checksum_of_tests": {},
+      "dependencies": [
+        "storage_engine"
+      ]
+    },
+    "sql_parser": {
+      "name": "SQL Parser",
+      "module": "parser",
+      "status": "NOT_STARTED",
+      "description": "SQL tokenizer and recursive-descent parser producing AST nodes",
+      "implementation_files": [
+        "parser/__init__.py",
+        "parser/tokenizer.py",
+        "parser/ast_nodes.py",
+        "parser/parser.py"
+      ],
+      "unit_tests_present": false,
+      "integration_tests_present": false,
+      "last_verified_timestamp": null,
+      "verification_method": "pytest tests/test_parser.py",
+      "checksum_of_related_code": {},
+      "checksum_of_tests": {},
+      "dependencies": [
+        "catalog_metadata"
+      ]
+    },
+    "query_planner": {
+      "name": "Query Planner",
+      "module": "planner",
+      "status": "NOT_STARTED",
+      "description": "Converts AST to logical query plan tree with basic optimizations",
+      "implementation_files": [
+        "planner/__init__.py",
+        "planner/plan_nodes.py",
+        "planner/planner.py"
+      ],
+      "unit_tests_present": false,
+      "integration_tests_present": false,
+      "last_verified_timestamp": null,
+      "verification_method": "pytest tests/test_planner.py",
+      "checksum_of_related_code": {},
+      "checksum_of_tests": {},
+      "dependencies": [
+        "sql_parser"
+      ]
+    },
+    "execution_engine": {
+      "name": "Execution Engine",
+      "module": "executor",
+      "status": "NOT_STARTED",
+      "description": "Volcano-model operators (SeqScan, Filter, Project, Sort, Limit) and executor",
+      "implementation_files": [
+        "executor/__init__.py",
+        "executor/operators.py",
+        "executor/executor.py"
+      ],
+      "unit_tests_present": false,
+      "integration_tests_present": false,
+      "last_verified_timestamp": null,
+      "verification_method": "pytest tests/test_executor.py",
+      "checksum_of_related_code": {},
+      "checksum_of_tests": {},
+      "dependencies": [
+        "query_planner"
+      ]
+    },
+    "indexing": {
+      "name": "Indexing (B-Tree)",
+      "module": "indexing",
+      "status": "NOT_STARTED",
+      "description": "Disk-backed B-Tree index with insert, lookup, range scan, delete",
+      "implementation_files": [
+        "indexing/__init__.py",
+        "indexing/btree.py",
+        "indexing/index_manager.py"
+      ],
+      "unit_tests_present": false,
+      "integration_tests_present": false,
+      "last_verified_timestamp": null,
+      "verification_method": "pytest tests/test_indexing.py",
+      "checksum_of_related_code": {},
+      "checksum_of_tests": {},
+      "dependencies": [
+        "execution_engine"
+      ]
+    },
+    "transactions": {
+      "name": "Transactions (WAL)",
+      "module": "transactions",
+      "status": "NOT_STARTED",
+      "description": "BEGIN/COMMIT/ROLLBACK with write-ahead log for durability",
+      "implementation_files": [
+        "transactions/__init__.py",
+        "transactions/wal.py",
+        "transactions/transaction.py"
+      ],
+      "unit_tests_present": false,
+      "integration_tests_present": false,
+      "last_verified_timestamp": null,
+      "verification_method": "pytest tests/test_transactions.py",
+      "checksum_of_related_code": {},
+      "checksum_of_tests": {},
+      "dependencies": [
+        "indexing"
+      ]
+    },
+    "concurrency": {
+      "name": "Concurrency Control",
+      "module": "concurrency",
+      "status": "NOT_STARTED",
+      "description": "File-level shared/exclusive locking with timeout-based deadlock prevention",
+      "implementation_files": [
+        "concurrency/__init__.py",
+        "concurrency/lock_manager.py"
+      ],
+      "unit_tests_present": false,
+      "integration_tests_present": false,
+      "last_verified_timestamp": null,
+      "verification_method": "pytest tests/test_concurrency.py",
+      "checksum_of_related_code": {},
+      "checksum_of_tests": {},
+      "dependencies": [
+        "transactions"
+      ]
+    },
+    "cli_interface": {
+      "name": "CLI Interface",
+      "module": "cli",
+      "status": "NOT_STARTED",
+      "description": "Interactive REPL shell with mydb> prompt, result formatting, special commands",
+      "implementation_files": [
+        "cli/__init__.py",
+        "cli/repl.py",
+        "main.py"
+      ],
+      "unit_tests_present": false,
+      "integration_tests_present": false,
+      "last_verified_timestamp": null,
+      "verification_method": "pytest tests/test_cli.py",
+      "checksum_of_related_code": {},
+      "checksum_of_tests": {},
+      "dependencies": [
+        "concurrency"
+      ]
+    }
+  }
+}
