@@ -1,0 +1,33 @@
+{
+  "magic": "MiniDB_Catalog",
+  "format_version": 1,
+  "schema_evolution": "Schema evolution is not supported in v1. To alter a table, drop and recreate it. A future version may support ALTER TABLE with migration.",
+  "tables": {
+    "users": {
+      "name": "users",
+      "file": "D:\\Projects\\AI Driven Projects\\Database\\minidb_data\\users.tbl",
+      "schema": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "INT",
+            "nullable": true
+          },
+          {
+            "name": "name",
+            "type": "STRING",
+            "nullable": true
+          },
+          {
+            "name": "age",
+            "type": "INT",
+            "nullable": true
+          }
+        ]
+      },
+      "created_at": "2026-02-16T19:24:43.155824+00:00",
+      "format_version": 1
+    }
+  },
+  "indexes": {}
+}

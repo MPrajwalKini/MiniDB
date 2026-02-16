@@ -1,2 +1,2 @@
-# MiniDB Concurrency — File locking and isolation
-# Status: NOT_STARTED
+# MiniDB Concurrency — Strict Two-Phase Locking
+# Status: COMPLETE (Phase 7)

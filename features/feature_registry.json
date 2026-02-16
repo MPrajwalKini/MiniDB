@@ -1,8 +1,8 @@
 {
   "meta": {
     "project": "MiniDB",
-    "version": "0.1.0",
-    "last_updated": "2026-02-16T16:40:00+05:30",
+    "version": "0.4.0",
+    "last_updated": "2026-02-16T20:45:00+05:30",
     "description": "Feature capability registry for MiniDB. Tracks implementation status, files, tests, and verification state. A feature can only be marked COMPLETE if implementation + tests exist, and VERIFIED only if verify_build.py confirms functionality."
   },
   "development_order": [
@@ -43,7 +43,7 @@
     "storage_engine": {
       "name": "Storage Engine",
       "module": "storage",
-      "status": "IN_PROGRESS",
+      "status": "COMPLETE",
       "description": "Page-based binary storage (4KB pages), data types, schema, serialization, CRUD operations, buffer manager",
       "implementation_files": [
         "storage/__init__.py",
@@ -67,7 +67,7 @@
     "catalog_metadata": {
       "name": "Catalog Metadata",
       "module": "catalog",
-      "status": "IN_PROGRESS",
+      "status": "COMPLETE",
       "description": "Database catalog for table/schema/index metadata, persisted to catalog.dat",
       "implementation_files": [
         "catalog/__init__.py",
@@ -86,7 +86,7 @@
     "sql_parser": {
       "name": "SQL Parser",
       "module": "parser",
-      "status": "NOT_STARTED",
+      "status": "COMPLETE",
       "description": "SQL tokenizer and recursive-descent parser producing AST nodes",
       "implementation_files": [
         "parser/__init__.py",
@@ -94,7 +94,7 @@
         "parser/ast_nodes.py",
         "parser/parser.py"
       ],
-      "unit_tests_present": false,
+      "unit_tests_present": true,
       "integration_tests_present": false,
       "last_verified_timestamp": null,
       "verification_method": "pytest tests/test_parser.py",
@@ -106,18 +106,18 @@
     },
     "query_planner": {
       "name": "Query Planner",
-      "module": "planner",
-      "status": "NOT_STARTED",
-      "description": "Converts AST to logical query plan tree with basic optimizations",
+      "module": "planning",
+      "status": "COMPLETE",
+      "description": "Converts AST to logical query plan tree. Logical plan nodes, logical planner with * expansion and column resolution.",
       "implementation_files": [
-        "planner/__init__.py",
-        "planner/plan_nodes.py",
-        "planner/planner.py"
+        "planning/__init__.py",
+        "planning/logical_plan.py",
+        "planning/planner.py"
       ],
-      "unit_tests_present": false,
-      "integration_tests_present": false,
+      "unit_tests_present": true,
+      "integration_tests_present": true,
       "last_verified_timestamp": null,
-      "verification_method": "pytest tests/test_planner.py",
+      "verification_method": "pytest tests/test_execution.py",
       "checksum_of_related_code": {},
       "checksum_of_tests": {},
       "dependencies": [
@@ -126,18 +126,21 @@
     },
     "execution_engine": {
       "name": "Execution Engine",
-      "module": "executor",
-      "status": "NOT_STARTED",
-      "description": "Volcano-model operators (SeqScan, Filter, Project, Sort, Limit) and executor",
+      "module": "execution",
+      "status": "COMPLETE",
+      "description": "Volcano-model operators (SeqScan, Filter, Project, Sort, Limit), physical planner, expression evaluator with 3VL, and executor driver",
       "implementation_files": [
-        "executor/__init__.py",
-        "executor/operators.py",
-        "executor/executor.py"
+        "execution/__init__.py",
+        "execution/expression_evaluator.py",
+        "execution/physical_plan.py",
+        "execution/planner.py",
+        "execution/executor.py",
+        "execution/context.py"
       ],
-      "unit_tests_present": false,
-      "integration_tests_present": false,
+      "unit_tests_present": true,
+      "integration_tests_present": true,
       "last_verified_timestamp": null,
-      "verification_method": "pytest tests/test_executor.py",
+      "verification_method": "pytest tests/test_execution.py",
       "checksum_of_related_code": {},
       "checksum_of_tests": {},
       "dependencies": [
@@ -147,16 +150,17 @@
     "indexing": {
       "name": "Indexing (B-Tree)",
       "module": "indexing",
-      "status": "NOT_STARTED",
-      "description": "Disk-backed B-Tree index with insert, lookup, range scan, delete",
+      "status": "COMPLETE",
+      "description": "Disk-backed B+ Tree index: order-preserving key encoding, insert/search/range scan, leaf sibling chain, node split, persistence, index manager, IndexScanExec operator, planner integration with predicate canonicalization",
       "implementation_files": [
         "indexing/__init__.py",
+        "indexing/key_encoding.py",
         "indexing/btree.py",
         "indexing/index_manager.py"
       ],
-      "unit_tests_present": false,
-      "integration_tests_present": false,
-      "last_verified_timestamp": null,
+      "unit_tests_present": true,
+      "integration_tests_present": true,
+      "last_verified_timestamp": "2026-02-16T21:30:00+05:30",
       "verification_method": "pytest tests/test_indexing.py",
       "checksum_of_related_code": {},
       "checksum_of_tests": {},

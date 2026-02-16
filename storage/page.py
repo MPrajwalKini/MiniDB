@@ -59,8 +59,8 @@ FORMAT_VERSION = 1         # Current storage format version
 MAGIC_BYTES = 0x4D44       # "MD" in ASCII — identifies MiniDB files
 
 # Header struct: format_version(H) page_id(I) num_slots(H) free_start(H)
-#                flags(H) free_end(H) checksum(I) reserved(6s)
-HEADER_FMT = ">HIHHHHI6s"
+#                flags(H) free_end(H) checksum(I) page_lsn(I) reserved(2s)
+HEADER_FMT = ">HIHHHHII2s"
 HEADER_STRUCT = struct.Struct(HEADER_FMT)
 
 # Slot struct: offset(H) length(H)
@@ -147,6 +147,7 @@ class Page:
             self._flags = 0
             self._free_end = PAGE_SIZE      # end of page
             self._checksum = 0
+            self._page_lsn = 0              # WAL: no log record applied yet
             self._write_header()
 
     def _parse_header(self) -> None:
@@ -159,7 +160,8 @@ class Page:
         self._flags = vals[4]
         self._free_end = vals[5]
         self._checksum = vals[6]
-        # vals[7] is reserved (6 bytes, ignored)
+        self._page_lsn = vals[7]   # WAL log sequence number
+        # vals[8] is reserved (2 bytes, ignored)
 
     def _verify_on_load(self) -> None:
         """Validate page integrity on load: CRC + structural invariants."""
@@ -196,7 +198,8 @@ class Page:
             self._flags,
             self._free_end,
             0,  # checksum placeholder (computed on to_bytes)
-            b"\x00" * 6,  # reserved
+            self._page_lsn,
+            b"\x00" * 2,  # reserved
         )
 
     def _assert_invariants(self) -> None:
@@ -209,6 +212,17 @@ class Page:
     @property
     def page_id(self) -> int:
         return self._page_id
+
+    @property
+    def page_lsn(self) -> int:
+        """Get the LSN of the last WAL record applied to this page."""
+        return self._page_lsn
+
+    @page_lsn.setter
+    def page_lsn(self, lsn: int) -> None:
+        """Set the page LSN and rewrite header."""
+        self._page_lsn = lsn
+        self._write_header()
 
     @property
     def num_slots(self) -> int:
@@ -325,6 +339,28 @@ class Page:
 
         self._write_slot(slot_id, 0, 0)
         self._write_header()
+        return True
+
+    def restore_tuple(self, slot_id: int, tuple_data: bytes) -> bool:
+        """
+        Restore a tuple at a specific slot_id (WAL undo support).
+        The slot must be deleted (0,0). Used during rollback to put a
+        deleted row back at its original RID.
+        Returns True on success, False if impossible.
+        """
+        tuple_len = len(tuple_data)
+        if slot_id < 0 or slot_id >= self._num_slots:
+            return False
+        offset, length = self._read_slot(slot_id)
+        if (offset, length) != DELETED_SLOT:
+            return False  # Slot is live — can't restore over it
+        if self._free_end - self._free_start < tuple_len:
+            return False
+        self._free_end -= tuple_len
+        self._data[self._free_end:self._free_end + tuple_len] = tuple_data
+        self._write_slot(slot_id, self._free_end, tuple_len)
+        self._write_header()
+        self._assert_invariants()
         return True
 
     def update_tuple(self, slot_id: int, new_data: bytes) -> bool:
