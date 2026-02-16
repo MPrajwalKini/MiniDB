@@ -254,6 +254,14 @@ class Catalog:
         return [meta for meta in self._indexes.values()
                 if meta.get("table", "").lower() == name_lower]
 
+    def get_index(self, index_name: str) -> Optional[Dict[str, Any]]:
+        """Get metadata for an index, or None if it doesn't exist."""
+        self._ensure_loaded()
+        index_name = index_name.lower()
+        if index_name in self._indexes:
+            return {"name": index_name, **self._indexes[index_name]}
+        return None
+
     def list_indexes(self) -> List[str]:
         """List all index names."""
         self._ensure_loaded()

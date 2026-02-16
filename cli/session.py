@@ -25,6 +25,8 @@ from transactions.wal import LogManager
 from transactions.transaction import TransactionManager
 from transactions.recovery import RecoveryManager
 from concurrency.lock_manager import LockManager
+from indexing import index_manager
+from storage.table import TableFile
 from execution.context import ExecutionContext
 from execution.executor import Executor
 from execution.physical_plan import ExecutionRow
@@ -32,6 +34,7 @@ from parser import parse
 from parser.ast_nodes import (
     BeginStmt, CommitStmt, RollbackStmt, ExplainStmt,
     SelectStmt, InsertStmt, UpdateStmt, DeleteStmt, CreateTableStmt,
+    CreateIndexStmt, DropIndexStmt,
     Statement,
 )
 from planning.planner import Planner
@@ -173,6 +176,12 @@ class Session:
             plan_text = self._explain(stmt)
             return None, plan_text, None
 
+        if isinstance(stmt, CreateIndexStmt):
+            return None, self._create_index(stmt), None
+
+        if isinstance(stmt, DropIndexStmt):
+            return None, self._drop_index(stmt), None
+
         # ─ Regular SQL execution ─
         # Autocommit: wrap in implicit txn
         implicit_txn = False
@@ -232,6 +241,43 @@ class Session:
 
         return "\n".join(lines)
 
+    def _create_index(self, stmt: CreateIndexStmt) -> str:
+        """Handle CREATE INDEX."""
+        # 1. Check table exists
+        table_path = self.context.get_table_path(stmt.table_name)
+        if not os.path.exists(table_path):
+            raise SessionError(f"Table '{stmt.table_name}' does not exist")
+
+        # 2. Open table
+        # We use a temporary TableFile instance. 
+        # Note: In a multi-user system, we would need a shared table handle or lock.
+        # For now, we rely on the buffer manager being shared.
+        table = TableFile(table_path, self.buffer_manager)
+        table.open()
+
+        try:
+            # 3. Build index
+            index_manager.build_index(
+                self.catalog, table, stmt.table_name, stmt.column_name, 
+                stmt.index_name, self.buffer_manager
+            )
+            return f"Index '{stmt.index_name}' created on {stmt.table_name}({stmt.column_name})"
+        except Exception as e:
+            raise SessionError(f"Failed to create index: {e}")
+        finally:
+            table.close()
+
+    def _drop_index(self, stmt: DropIndexStmt) -> str:
+        """Handle DROP INDEX."""
+        if not self.catalog.get_index(stmt.index_name):
+             raise SessionError(f"Index '{stmt.index_name}' not found")
+
+        try:
+            index_manager.drop_index(self.catalog, stmt.index_name)
+            return f"Index '{stmt.index_name}' dropped"
+        except Exception as e:
+            raise SessionError(f"Failed to drop index: {e}")
+
     def _format_plan_tree(self, node, indent: int = 0) -> str:
         """Recursively format a plan node tree."""
         prefix = "  " * indent
@@ -247,6 +293,8 @@ class Session:
             attrs['predicate'] = str(node.predicate)
         if hasattr(node, 'scan_type'):
             attrs['scan_type'] = node.scan_type
+        if hasattr(node, 'index_name') and node.index_name:
+            attrs['index'] = node.index_name
         if hasattr(node, 'columns') and node.columns:
             attrs['columns'] = str(node.columns)
 

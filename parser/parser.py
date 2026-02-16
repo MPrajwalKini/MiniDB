@@ -15,6 +15,7 @@ from typing import List, Optional, NoReturn
 from parser.tokenizer import Token, TokenType, Tokenizer
 from parser.ast_nodes import (
     Statement, SelectStmt, InsertStmt, UpdateStmt, DeleteStmt, CreateTableStmt,
+    CreateIndexStmt, DropIndexStmt,
     BeginStmt, CommitStmt, RollbackStmt, ExplainStmt,
     Expression, Literal, QualifiedName, BinaryExpr, UnaryExpr, GroupingExpr, IsNullExpr,
     SelectItem, OrderItem, ColumnDef, Assignment
@@ -70,8 +71,12 @@ class Parser:
             return self._parse_update()
         if self._match(TokenType.DELETE):
             return self._parse_delete()
+        if self._match(TokenType.DELETE):
+            return self._parse_delete()
         if self._match(TokenType.CREATE):
             return self._parse_create()
+        if self._match(TokenType.DROP):
+            return self._parse_drop()
         if self._match(TokenType.BEGIN):
             return self._parse_begin()
         if self._match(TokenType.COMMIT):
@@ -194,9 +199,17 @@ class Parser:
             
         return DeleteStmt(table_name, where)
 
-    def _parse_create(self) -> CreateTableStmt:
+    def _parse_create(self) -> Statement:
+        # CREATE TABLE ... or CREATE INDEX ...
+        if self._match(TokenType.TABLE):
+            return self._parse_create_table()
+        if self._match(TokenType.INDEX):
+            return self._parse_create_index()
+        
+        raise ParseError(f"Expected TABLE or INDEX after CREATE", self._peek())
+
+    def _parse_create_table(self) -> CreateTableStmt:
         # CREATE TABLE table (col type ...)
-        self._consume(TokenType.TABLE, "Expected TABLE after CREATE")
         table_name = self._consume(TokenType.IDENTIFIER, "Expected table name").value
         
         self._consume(TokenType.LPAREN, "Expected ( after table name")
@@ -231,6 +244,30 @@ class Parser:
                 
         self._consume(TokenType.RPAREN, "Expected ) after column definitions")
         return CreateTableStmt(table_name, columns)
+
+    def _parse_create_index(self) -> CreateIndexStmt:
+        # CREATE INDEX index_name ON table_name (column_name)
+        index_name = self._consume(TokenType.IDENTIFIER, "Expected index name").value
+        self._consume(TokenType.ON, "Expected ON after index name")
+        table_name = self._consume(TokenType.IDENTIFIER, "Expected table name").value
+        
+        self._consume(TokenType.LPAREN, "Expected (")
+        column_name = self._consume(TokenType.IDENTIFIER, "Expected column name").value
+        self._consume(TokenType.RPAREN, "Expected )")
+        
+        return CreateIndexStmt(index_name, table_name, column_name)
+
+    def _parse_drop(self) -> Statement:
+        # DROP INDEX index_name
+        # (DROP TABLE not yet supported in AST)
+        if self._match(TokenType.INDEX):
+             index_name = self._consume(TokenType.IDENTIFIER, "Expected index name").value
+             return DropIndexStmt(index_name)
+             
+        if self._match(TokenType.TABLE):
+            raise ParseError("DROP TABLE not yet implemented", self._previous())
+
+        raise ParseError("Expected INDEX after DROP", self._peek())
 
     # ─── Expression Parsing ─────────────────────────────────────────
     # Precedence climbing: OR -> AND -> NOT -> Comparison -> Add -> Mult -> Unary -> Primary

@@ -47,6 +47,8 @@ class TokenType(Enum):
     AS = auto()
     DISTINCT = auto()  # Placeholder
     IS = auto()        # Placeholder
+    INDEX = auto()
+    ON = auto()
 
     # Transaction Control
     BEGIN = auto()
@@ -155,7 +157,12 @@ class Tokenizer:
         "TRANSACTION": TokenType.TRANSACTION,
         "EXPLAIN": TokenType.EXPLAIN,
         "LOGICAL": TokenType.LOGICAL,
+        "TRANSACTION": TokenType.TRANSACTION,
+        "EXPLAIN": TokenType.EXPLAIN,
+        "LOGICAL": TokenType.LOGICAL,
         "PHYSICAL": TokenType.PHYSICAL,
+        "INDEX": TokenType.INDEX,
+        "ON": TokenType.ON,
     }
 
     # Regex patterns

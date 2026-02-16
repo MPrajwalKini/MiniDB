@@ -27,6 +27,31 @@
       },
       "created_at": "2026-02-16T19:24:43.155824+00:00",
       "format_version": 1
+    },
+    "employees": {
+      "name": "employees",
+      "file": "D:\\Projects\\AI Driven Projects\\Database\\minidb_data\\employees.tbl",
+      "schema": {
+        "columns": [
+          {
+            "name": "id",
+            "type": "INT",
+            "nullable": true
+          },
+          {
+            "name": "name",
+            "type": "STRING",
+            "nullable": true
+          },
+          {
+            "name": "salary",
+            "type": "INT",
+            "nullable": true
+          }
+        ]
+      },
+      "created_at": "2026-02-16T19:51:46.353504+00:00",
+      "format_version": 1
     }
   },
   "indexes": {}

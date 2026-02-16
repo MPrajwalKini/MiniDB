@@ -1,5 +1,5 @@
 # MiniDB Project State
-## Version: 0.8.0
+## Version: 0.8.1
 
 ### Completed Phases
 | Phase | Name | Status |
@@ -21,7 +21,13 @@
 - **Main**: Entry point with --execute, --file, and interactive modes
 - **Tests**: 41 new CLI tests (246 total, all passing)
 
+### Phase 8.1 Summary
+- **SQL Index Management**: CREATE INDEX / DROP INDEX support integrated into Parser, Session, and Executor
+- **Catalog**: Extended API for index name lookup
+- **Planner**: Index visibility in physical plans (EXPLAIN)
+- **Tests**: 8 new CLI index tests (254 total, all passing)
+
 ### Test Results
-- Total: 246 tests
-- Passed: 246
+- Total: 254 tests
+- Passed: 254
 - Failed: 0

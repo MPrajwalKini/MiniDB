@@ -130,7 +130,7 @@ class IndexScanExec(PhysicalNode):
                  low_inclusive: bool = True, high_inclusive: bool = True,
                  residual_predicate: Optional[Expression] = None,
                  alias: Optional[str] = None,
-                 ctx=None, table_name: str = ""):
+                 ctx=None, table_name: str = "", index_name: str = ""):
         super().__init__()
         self.table = table
         self.schema = schema
@@ -144,6 +144,7 @@ class IndexScanExec(PhysicalNode):
         self.high_inclusive = high_inclusive
         self._ctx = ctx
         self._table_name = table_name
+        self.index_name = index_name
         self.residual_predicate = residual_predicate
         self.alias = alias
         self._rid_iter = None

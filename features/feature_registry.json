@@ -171,15 +171,16 @@
     "transactions": {
       "name": "Transactions (WAL)",
       "module": "transactions",
-      "status": "NOT_STARTED",
+      "status": "COMPLETE",
       "description": "BEGIN/COMMIT/ROLLBACK with write-ahead log for durability",
       "implementation_files": [
         "transactions/__init__.py",
         "transactions/wal.py",
-        "transactions/transaction.py"
+        "transactions/transaction.py",
+        "transactions/recovery.py"
       ],
-      "unit_tests_present": false,
-      "integration_tests_present": false,
+      "unit_tests_present": true,
+      "integration_tests_present": true,
       "last_verified_timestamp": null,
       "verification_method": "pytest tests/test_transactions.py",
       "checksum_of_related_code": {},
@@ -191,14 +192,14 @@
     "concurrency": {
       "name": "Concurrency Control",
       "module": "concurrency",
-      "status": "NOT_STARTED",
+      "status": "COMPLETE",
       "description": "File-level shared/exclusive locking with timeout-based deadlock prevention",
       "implementation_files": [
         "concurrency/__init__.py",
         "concurrency/lock_manager.py"
       ],
-      "unit_tests_present": false,
-      "integration_tests_present": false,
+      "unit_tests_present": true,
+      "integration_tests_present": true,
       "last_verified_timestamp": null,
       "verification_method": "pytest tests/test_concurrency.py",
       "checksum_of_related_code": {},
@@ -210,17 +211,19 @@
     "cli_interface": {
       "name": "CLI Interface",
       "module": "cli",
-      "status": "NOT_STARTED",
-      "description": "Interactive REPL shell with mydb> prompt, result formatting, special commands",
+      "status": "COMPLETE",
+      "description": "Interactive REPL shell, session management, transaction control, streaming renderer, and SQL Index Management (CREATE/DROP INDEX)",
       "implementation_files": [
         "cli/__init__.py",
         "cli/repl.py",
+        "cli/session.py",
+        "cli/renderer.py",
         "main.py"
       ],
-      "unit_tests_present": false,
-      "integration_tests_present": false,
+      "unit_tests_present": true,
+      "integration_tests_present": true,
       "last_verified_timestamp": null,
-      "verification_method": "pytest tests/test_cli.py",
+      "verification_method": "pytest tests/test_cli.py tests/test_cli_index.py",
       "checksum_of_related_code": {},
       "checksum_of_tests": {},
       "dependencies": [

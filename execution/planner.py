@@ -209,6 +209,7 @@ class PhysicalPlanner:
                 residual_predicate=predicate,
                 alias=scan_node.alias,
                 ctx=self.context, table_name=table_name,
+                index_name=matching_index["name"],
             )
         elif op == TokenType.GT:
             return IndexScanExec(
@@ -218,6 +219,7 @@ class PhysicalPlanner:
                 residual_predicate=predicate,
                 alias=scan_node.alias,
                 ctx=self.context, table_name=table_name,
+                index_name=matching_index["name"],
             )
         elif op == TokenType.GTE:
             return IndexScanExec(
@@ -227,6 +229,7 @@ class PhysicalPlanner:
                 residual_predicate=predicate,
                 alias=scan_node.alias,
                 ctx=self.context, table_name=table_name,
+                index_name=matching_index["name"],
             )
         elif op == TokenType.LT:
             return IndexScanExec(
@@ -236,6 +239,7 @@ class PhysicalPlanner:
                 residual_predicate=predicate,
                 alias=scan_node.alias,
                 ctx=self.context, table_name=table_name,
+                index_name=matching_index["name"],
             )
         elif op == TokenType.LTE:
             return IndexScanExec(
@@ -245,6 +249,7 @@ class PhysicalPlanner:
                 residual_predicate=predicate,
                 alias=scan_node.alias,
                 ctx=self.context, table_name=table_name,
+                index_name=matching_index["name"],
             )
 
         return None

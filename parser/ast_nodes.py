@@ -270,6 +270,30 @@ class CreateTableStmt(Statement):
         return f"CREATE TABLE {self.table_name} ({cols})"
 
 
+@dataclass
+class CreateIndexStmt(Statement):
+    """
+    CREATE INDEX index_name ON table_name (column_name)
+    """
+    index_name: str
+    table_name: str
+    column_name: str
+
+    def __repr__(self) -> str:
+        return f"CREATE INDEX {self.index_name} ON {self.table_name} ({self.column_name})"
+
+
+@dataclass
+class DropIndexStmt(Statement):
+    """
+    DROP INDEX index_name
+    """
+    index_name: str
+
+    def __repr__(self) -> str:
+        return f"DROP INDEX {self.index_name}"
+
+
 # ─── Transaction Control ──────────────────────────────────────────────────
 
 @dataclass
