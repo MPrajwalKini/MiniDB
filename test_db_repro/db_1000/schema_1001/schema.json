@@ -1,0 +1,11 @@
+{
+  "oid": 1001,
+  "name": "public",
+  "tables": [
+    {
+      "oid": 1003,
+      "name": "t"
+    }
+  ],
+  "indexes": []
+}

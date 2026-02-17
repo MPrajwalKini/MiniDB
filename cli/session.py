@@ -20,6 +20,10 @@ import time
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from catalog.catalog import Catalog
+from catalog.system_catalog import SystemCatalog
+from catalog.database import Database
+from catalog.bootstrap import bootstrap_system
+
 from storage.buffer import BufferManager
 from transactions.wal import LogManager
 from transactions.transaction import TransactionManager
@@ -62,11 +66,31 @@ class Session:
         os.makedirs(self.db_path, exist_ok=True)
 
         # ── Engine components ──
+        # Legacy catalog (kept for compatibility facade, though data migrated)
         self.catalog = Catalog(self.db_path)
-        self.catalog.load()
+        # self.catalog.load() # Skip loading legacy file, use SystemCatalog
 
+        # System Catalog (New)
+        self.system_catalog = bootstrap_system(self.db_path)
+        
+        # Set default database context
+        # Check for 'default' database
+        db_info = self.system_catalog.get_database("default")
+        if not db_info:
+             # Should be created by bootstrap, but if fails:
+             db_info = self.system_catalog.create_database("default")
+             
+        # Initialize Database object
+        db_path_abs = self.system_catalog.data_root / db_info.path
+        self.current_db = Database(str(db_path_abs), db_info.name, db_info.oid)
+        
+        # Set search path (public)
+        # Ensure public schema exists (bootstrap does this)
+        public_schema = self.current_db.get_schema("public")
+        self.search_path = [public_schema.oid] if public_schema else []
+        
         self.buffer_manager = BufferManager(buffer_pool_size)
-        self.log_manager = LogManager(self.db_path)
+        self.log_manager = LogManager(self.db_path) # Logs at root? Or per DB? For now root.
         self.lock_manager = LockManager()
         self.txn_manager = TransactionManager(
             self.log_manager,
@@ -90,6 +114,10 @@ class Session:
             txn_manager=self.txn_manager,
             log_manager=self.log_manager,
             lock_manager=self.lock_manager,
+            # New fields
+            system_catalog=self.system_catalog,
+            current_db=self.current_db,
+            search_path=self.search_path
         )
         self.executor = Executor(self.context)
 
@@ -223,7 +251,12 @@ class Session:
 
     def _explain(self, stmt: ExplainStmt) -> str:
         """Generate plan text without executing."""
-        planner = Planner(self.catalog)
+        planner = Planner(
+            self.catalog, 
+            self.system_catalog, 
+            self.current_db, 
+            self.search_path
+        )
         physical_planner = PhysicalPlanner(self.context)
 
         lines = []

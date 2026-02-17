@@ -1,0 +1,16 @@
+{
+  "oid": 1000,
+  "name": "default",
+  "schemas": [
+    {
+      "oid": 1001,
+      "name": "public",
+      "path": "schema_1001"
+    },
+    {
+      "oid": 1002,
+      "name": "information_schema",
+      "path": "schema_1002"
+    }
+  ]
+}

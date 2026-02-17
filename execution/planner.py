@@ -8,7 +8,7 @@ and the predicate is a simple column OP literal comparison, the planner
 replaces SeqScan + Filter with IndexScan (+ residual filter if needed).
 """
 
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Tuple
 import os
 
 from planning.logical_plan import (
@@ -28,7 +28,8 @@ from parser.ast_nodes import (
     GroupingExpr
 )
 from parser.tokenizer import TokenType
-
+from catalog.resolver import Resolver, ObjectNotFoundError
+from catalog.system_catalog import SystemCatalog
 
 # Comparison operators that can use an index
 _INDEX_OPS = {TokenType.EQ, TokenType.LT, TokenType.GT, TokenType.LTE, TokenType.GTE}
@@ -42,13 +43,47 @@ _FLIP_OPS = {
     TokenType.EQ: TokenType.EQ,
 }
 
-
 class PhysicalPlanner:
     """
     Transforms Logical Plan tree into Physical Plan iterator tree.
     """
-    def __init__(self, context: ExecutionContext):
+    def __init__(self, context: Any):
         self.context = context
+        self.resolver = None
+        if self.context.system_catalog:
+             self.resolver = Resolver(self.context.system_catalog)
+             if self.context.current_db:
+                 self.resolver._db_cache[self.context.current_db.oid] = self.context.current_db
+
+    def _resolve_table_info(self, table_name: str) -> Tuple[Optional[Schema], Optional[str]]:
+        """Returns (Schema object, file_path_str) or (None, None)."""
+        if self.resolver and self.context.current_db:
+             try:
+                 db, schema, table_info = self.resolver.resolve_table(
+                     table_name, self.context.current_db.oid, self.context.search_path
+                 )
+                 # schema is Schema OBJECT, thus has absolute .schema_dir
+                 schema_dir = schema.schema_dir
+                 table_path = schema_dir / f"table_{table_info.oid}.tbl"
+                 
+                 # Get wrapper schema
+                 tf = TableFile(str(table_path), self.context.buffer_manager)
+                 if table_path.exists():
+                     tf.open()
+                     schema = tf.schema
+                     tf.close()
+                     return schema, str(table_path)
+                 else:
+                     return None, str(table_path)
+             except (ObjectNotFoundError, FileNotFoundError):
+                 return None, None
+        else:
+             # Legacy fallback
+             schema = self.context.catalog.get_table_schema(table_name)
+             if schema:
+                  path = self.context.get_table_path(table_name)
+                  return schema, path
+             return None, None
 
     def plan(self, node: LogicalNode) -> PhysicalNode:
         """Create physical plan from logical node."""
@@ -77,11 +112,10 @@ class PhysicalPlanner:
         raise NotImplementedError(f"Logical node type {type(node)} not supported")
 
     def _plan_scan(self, node: LogicalScan) -> PhysicalNode:
-        schema = self.context.catalog.get_table_schema(node.table_name)
+        schema, file_path = self._resolve_table_info(node.table_name)
         if not schema:
             raise RuntimeError(f"Table {node.table_name} not found")
             
-        file_path = self.context.get_table_path(node.table_name)
         table = TableFile(file_path, self.context.buffer_manager)
         if os.path.exists(file_path):
              table.open()
@@ -114,10 +148,9 @@ class PhysicalPlanner:
         return ValuesExec(node.rows, node.columns)
 
     def _plan_insert(self, node: LogicalInsert) -> PhysicalNode:
-        schema = self.context.catalog.get_table_schema(node.table_name)
+        schema, file_path = self._resolve_table_info(node.table_name)
         if not schema: raise RuntimeError(f"Table {node.table_name} not found")
         
-        file_path = self.context.get_table_path(node.table_name)
         table = TableFile(file_path, self.context.buffer_manager)
         if os.path.exists(file_path):
              table.open()
@@ -126,8 +159,9 @@ class PhysicalPlanner:
                           ctx=self.context, table_name=node.table_name)
 
     def _plan_update(self, node: LogicalUpdate) -> PhysicalNode:
-        schema = self.context.catalog.get_table_schema(node.table_name)
-        file_path = self.context.get_table_path(node.table_name)
+        schema, file_path = self._resolve_table_info(node.table_name)
+        if not schema: raise RuntimeError(f"Table {node.table_name} not found")
+        
         table = TableFile(file_path, self.context.buffer_manager)
         if os.path.exists(file_path): table.open()
         
@@ -135,8 +169,9 @@ class PhysicalPlanner:
                           ctx=self.context, table_name=node.table_name)
 
     def _plan_delete(self, node: LogicalDelete) -> PhysicalNode:
-        schema = self.context.catalog.get_table_schema(node.table_name)
-        file_path = self.context.get_table_path(node.table_name)
+        schema, file_path = self._resolve_table_info(node.table_name)
+        if not schema: raise RuntimeError(f"Table {node.table_name} not found")
+        
         table = TableFile(file_path, self.context.buffer_manager)
         if os.path.exists(file_path): table.open()
         
@@ -149,9 +184,41 @@ class PhysicalPlanner:
             cols.append(Column(cdef.name, cdef.data_type, cdef.nullable))
             
         schema = Schema(cols)
-        path = self.context.get_table_path(node.table_name)
         
-        return DDLExec(self.context.catalog, node.table_name, schema, path, self.context.buffer_manager)
+        target_schema_obj = None
+        simple_table_name = node.table_name
+        
+        if self.context.system_catalog and self.context.current_db:
+            # Resolve target schema
+            parts = node.table_name.split(".")
+            if len(parts) == 3:
+                # db.schema.table - TODO: Support cross-DB create?
+                # For now assume current DB
+                if parts[0] != self.context.current_db.name:
+                    raise RuntimeError("Cross-database CREATE TABLE not supported yet")
+                schema_name = parts[1]
+                simple_table_name = parts[2]
+                target_schema_obj = self.context.current_db.get_schema(schema_name)
+            elif len(parts) == 2:
+                # schema.table
+                schema_name = parts[0]
+                simple_table_name = parts[1]
+                target_schema_obj = self.context.current_db.get_schema(schema_name)
+            else:
+                # Unqualified -> use public
+                # TODO: Use current_schema from context if available
+                target_schema_obj = self.context.current_db.get_schema("public")
+                
+            if not target_schema_obj:
+                raise RuntimeError(f"Target schema for '{node.table_name}' not found")
+
+        # For legacy, target_schema_obj is None, DDLExec handles fallback
+        
+        path = "" # Not used in new path, resolved by DDLExec using OID
+        
+        # DDLExec(context, table_name, schema, target_catalog_schema)
+        # Note: We pass simple_table_name!
+        return DDLExec(self.context, simple_table_name, schema, target_schema_obj)
 
     # ─── Index Selection Logic ──────────────────────────────────────
 

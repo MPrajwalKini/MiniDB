@@ -39,6 +39,8 @@ from storage.page import (
 from storage.schema import Schema
 from storage.serializer import serialize_row, deserialize_row
 
+print("DEBUG: Loading storage.table module")
+
 
 # ─── Shared global buffer manager ──────────────────────────────────────────
 # In a real database this would be a singleton managed at the engine level.
@@ -112,6 +114,7 @@ class TableFile:
         Create a new table file with the given schema.
         Writes the header page (page 0) with metadata.
         """
+        print(f"DEBUG_TABLE: create {self._file_path}")
         self._table_name = table_name
         self._schema = schema
 
@@ -144,6 +147,7 @@ class TableFile:
         Open an existing table file and read its schema.
         Pages are CRC32-validated on load.
         """
+        print(f"DEBUG_TABLE: open {self._file_path}. Exists? {os.path.exists(self._file_path)}")
         if not os.path.exists(self._file_path):
             raise FileNotFoundError(f"Table file not found: {self._file_path}")
 
@@ -386,6 +390,7 @@ class TableFile:
         """Attempt to flush on garbage collection."""
         if self._is_open:
             try:
+                # print(f"DEBUG_TABLE: __del__ flushing {self._file_path}")
                 self._flush()
             except Exception:
                 pass

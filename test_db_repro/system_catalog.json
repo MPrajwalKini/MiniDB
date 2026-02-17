@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "next_oid": 1004,
+  "databases": [
+    {
+      "oid": 1000,
+      "name": "default",
+      "path": "db_1000"
+    }
+  ]
+}

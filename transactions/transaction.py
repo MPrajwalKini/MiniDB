@@ -27,12 +27,14 @@ class TransactionState(Enum):
 
 class _TxnInfo:
     """Internal bookkeeping for one transaction."""
-    __slots__ = ('txn_id', 'state', 'last_lsn')
+    __slots__ = ('txn_id', 'state', 'last_lsn', 'commit_hooks', 'rollback_hooks')
 
     def __init__(self, txn_id: int):
         self.txn_id = txn_id
         self.state = TransactionState.ACTIVE
         self.last_lsn = NULL_LSN  # chain head for prev_txn_lsn
+        self.commit_hooks = []
+        self.rollback_hooks = []
 
 
 class TransactionManager:
@@ -97,9 +99,17 @@ class TransactionManager:
         if self._lock:
             self._lock.release_all(txn_id)
 
-        # 3. Flush dirty data pages
         if self._buffer:
             self._flush_dirty_pages()
+
+        # 4. Execute commit hooks (e.g., catalog persistence)
+        print(f"DEBUG_TXN: Executing {len(info.commit_hooks)} commit hooks for txn {txn_id}")
+        for hook in info.commit_hooks:
+            try:
+                hook()
+            except Exception as e:
+                # Log error but don't fail commit (already durable)
+                print(f"Warning: Commit hook failed for txn {txn_id}: {e}")
 
     def abort(self, txn_id: int) -> None:
         """
@@ -119,9 +129,16 @@ class TransactionManager:
             info.last_lsn = lsn
             info.state = TransactionState.ABORTED
 
-        # 3. Release all locks AFTER undo + ABORT is durable
         if self._lock:
             self._lock.release_all(txn_id)
+
+        # 4. Execute rollback hooks (e.g., revert catalog changes, delete files)
+        print(f"DEBUG_TXN: Executing {len(info.rollback_hooks)} rollback hooks for txn {txn_id}")
+        for hook in info.rollback_hooks:
+            try:
+                hook()
+            except Exception as e:
+                print(f"Warning: Rollback hook failed for txn {txn_id}: {e}")
 
     # ─── Query ───────────────────────────────────────────────────────────
 
@@ -298,15 +315,31 @@ class TransactionManager:
         """Get a page from the buffer manager for physical undo."""
         if not self._buffer:
             return None
-        file_path = os.path.join(self._data_dir, f"{table_name}.tbl")
+        # Handle absolute paths (new catalog) vs relative names (legacy)
+        if os.path.isabs(table_name):
+             file_path = table_name
+        else:
+             file_path = os.path.join(self._data_dir, f"{table_name}.tbl")
         return self._buffer.get_page(file_path, page_id)
 
     def _mark_dirty(self, table_name, page_id):
         """Mark a page dirty in the buffer manager."""
         if not self._buffer:
             return
-        file_path = os.path.join(self._data_dir, f"{table_name}.tbl")
+        if os.path.isabs(table_name):
+             file_path = table_name
+        else:
+             file_path = os.path.join(self._data_dir, f"{table_name}.tbl")
         self._buffer.mark_dirty(file_path, page_id)
+
+    def register_hook(self, txn_id: int, commit_fn=None, rollback_fn=None) -> None:
+        """Register a callback for commit/rollback."""
+        print(f"DEBUG_TXN: Registering hooks for txn {txn_id} (commit={bool(commit_fn)}, rollback={bool(rollback_fn)})")
+        info = self._get_active(txn_id)
+        if commit_fn:
+            info.commit_hooks.append(commit_fn)
+        if rollback_fn:
+            info.rollback_hooks.append(rollback_fn)
 
     def _flush_dirty_pages(self):
         """Flush all dirty data pages to disk."""

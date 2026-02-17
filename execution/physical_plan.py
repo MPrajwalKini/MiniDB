@@ -8,6 +8,7 @@ Nodes implement open(), next(), close().
 from abc import ABC, abstractmethod
 from typing import Optional, List, Dict, Any, Iterator
 import heapq
+import os
 
 from storage.table import TableFile
 from storage.page import RID
@@ -476,11 +477,11 @@ class InsertExec(PhysicalNode):
             if self._ctx and self._ctx.txn_manager and self._ctx.active_txn_id:
                 tuple_data = serialize_row(row_tuple, self.table.schema)
                 lsn = self._ctx.txn_manager.log_insert(
-                    self._ctx.active_txn_id, self._table_name,
+                    self._ctx.active_txn_id, self.table.file_path,
                     rid.page_id, rid.slot_id, tuple_data)
                 # Update page LSN
                 page = self._ctx.buffer_manager.get_page(
-                    self._ctx.get_table_path(self._table_name), rid.page_id)
+                    self.table.file_path, rid.page_id)
                 if page:
                     page.page_lsn = lsn
 
@@ -548,11 +549,11 @@ class UpdateExec(PhysicalNode):
                 old_data = serialize_row(old_tuple, self.table.schema)
                 new_data = serialize_row(new_tuple, self.table.schema)
                 lsn = self._ctx.txn_manager.log_update(
-                    self._ctx.active_txn_id, self._table_name,
+                    self._ctx.active_txn_id, self.table.file_path,
                     row.rid.page_id, row.rid.slot_id, old_data, new_data)
                 self.table.update_row(row.rid, new_tuple)
                 page = self._ctx.buffer_manager.get_page(
-                    self._ctx.get_table_path(self._table_name), row.rid.page_id)
+                    self.table.file_path, row.rid.page_id)
                 if page:
                     page.page_lsn = lsn
             else:
@@ -607,13 +608,13 @@ class DeleteExec(PhysicalNode):
             if self._ctx and self._ctx.txn_manager and self._ctx.active_txn_id:
                 # Get tuple bytes from page for WAL before-image
                 page = self._ctx.buffer_manager.get_page(
-                    self._ctx.get_table_path(self._table_name), rid.page_id)
+                    self.table.file_path, rid.page_id)
                 tuple_data = page.get_tuple(rid.slot_id) if page else b""
                 if tuple_data is None:
                     tuple_data = b""
 
                 lsn = self._ctx.txn_manager.log_delete(
-                    self._ctx.active_txn_id, self._table_name,
+                    self._ctx.active_txn_id, self.table.file_path,
                     rid.page_id, rid.slot_id, tuple_data)
                 self.table.delete_row(rid)
                 if page:
@@ -632,13 +633,13 @@ class DeleteExec(PhysicalNode):
 
 class DDLExec(PhysicalNode):
     """Executes DDL statements like CREATE TABLE."""
-    def __init__(self, catalog: Any, table_name: str, schema: Schema, file_path: str, buffer_manager: Any):
+    def __init__(self, context: Any, table_name: str, schema: Schema, 
+                 target_catalog_schema: Any = None):
         super().__init__()
-        self.catalog = catalog
+        self.context = context
         self.table_name = table_name
-        self.schema = schema
-        self.file_path = file_path
-        self.buffer_manager = buffer_manager
+        self.schema = schema # Storage Schema (columns)
+        self.target_catalog_schema = target_catalog_schema # Catalog Schema (metadata)
         self._executed = False
 
     def open(self):
@@ -648,12 +649,69 @@ class DDLExec(PhysicalNode):
     def next(self) -> Optional[ExecutionRow]:
         if self._executed: return None
         
-        # 1. Register in Catalog
-        self.catalog.create_table(self.table_name, self.schema, self.file_path)
+        # Check for active transaction to determine if DDL should be deferred
+        txn_id = None
+        deferred = False
+        if self.context.txn_manager:
+            txn_id = self.context.txn_manager.get_active_txn()
+            if txn_id:
+                deferred = True
         
-        # 2. Initialize TableFile
-        tf = TableFile(self.file_path, self.buffer_manager)
-        tf.create(self.table_name, self.schema)
+        if self.context.system_catalog and self.target_catalog_schema:
+            import os
+            
+            # 1. Allocate OID
+            oid = self.context.system_catalog.allocate_oid()
+            
+            # 2. Register in Catalog Schema (defer persistence if in txn)
+            self.target_catalog_schema.create_table(self.table_name, oid, save=(not deferred))
+            
+            # 3. Create Table File
+            # target_catalog_schema is Schema object, has schema_dir (Path)
+            file_path = self.target_catalog_schema.schema_dir / f"table_{oid}.tbl"
+            
+            tf = TableFile(str(file_path), self.context.buffer_manager)
+            tf.create(self.table_name, self.schema)
+            
+            # 4. Register Hooks if deferred
+            if deferred:
+                def commit_hook():
+                    self.target_catalog_schema._save()
+                
+                def rollback_hook():
+                    print(f"DEBUG_HOOK: Rollback hook for table '{self.table_name}'")
+                    # 1. Revert schema change
+                    try:
+                        self.target_catalog_schema.drop_table(self.table_name, save=False)
+                    except ValueError:
+                        print("DEBUG_HOOK: drop_table failed (not found?)")
+                        pass
+                    
+                    # 2. Invalidate buffer cache (evict dirty pages to prevent flush)
+                    if self.context.buffer_manager:
+                        # Debug buffer contents
+                        print(f"DEBUG_BUFFER: Keys in cache: {[k[0] for k in self.context.buffer_manager._cache.keys()]}")
+                        print(f"DEBUG_BUFFER: Invalidating {str(file_path)}")
+                        self.context.buffer_manager.invalidate_file(str(file_path))
+                        print(f"DEBUG_BUFFER: Keys after invalidation: {[k[0] for k in self.context.buffer_manager._cache.keys()]}")
+                        
+                    # 3. Delete file
+                    print(f"DEBUG_HOOK: Deleting file {file_path}. Exists? {file_path.exists()}")
+                    if file_path.exists():
+                        try:
+                            os.remove(file_path)
+                            print(f"DEBUG_HOOK: Deleted file {file_path}. Still exists? {file_path.exists()}")
+                        except OSError as e:
+                            print(f"Warning: Failed to delete rolled back table file {file_path}: {e}")
+
+                self.context.txn_manager.register_hook(txn_id, commit_hook, rollback_hook)
+            
+        else:
+            # Legacy fallback
+            file_path = self.context.get_table_path(self.table_name)
+            self.context.catalog.create_table(self.table_name, self.schema, os.path.basename(file_path))
+            tf = TableFile(file_path, self.context.buffer_manager)
+            tf.create(self.table_name, self.schema)
         
         self._executed = True
         return None

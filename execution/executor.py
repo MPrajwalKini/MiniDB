@@ -21,24 +21,30 @@ class Executor:
     """
     def __init__(self, context: ExecutionContext):
         self.context = context
-        self.logical_planner = Planner(context.catalog)
-        self.physical_planner = PhysicalPlanner(context)
 
     def execute(self, sql: str) -> Iterator[ExecutionRow]:
         """
         Execute SQL query and yield result rows.
         """
+        # Instantiate planners per-query to ensure fresh catalog view (resolver cache)
+        logical_planner = Planner(
+            self.context.catalog, 
+            self.context.system_catalog, 
+            self.context.current_db, 
+            self.context.search_path
+        )
+        physical_planner = PhysicalPlanner(self.context)
+
         # 1. Parse
         ast = parse(sql)
         
         # 2. Logical Plan
-        logical_plan = self.logical_planner.plan(ast)
+        logical_plan = logical_planner.plan(ast)
         
         # 3. Physical Plan
-        physical_plan = self.physical_planner.plan(logical_plan)
+        physical_plan = physical_planner.plan(logical_plan)
         
         # 4. Execute
-        # Resource Guarantee: Ensure close() is called.
         try:
             physical_plan.open()
             while True:

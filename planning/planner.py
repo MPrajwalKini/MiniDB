@@ -17,14 +17,61 @@ from planning.logical_plan import (
     LogicalCreate
 )
 from catalog.catalog import Catalog
+from catalog.system_catalog import SystemCatalog
+from catalog.database import Database
+from catalog.resolver import Resolver, ObjectNotFoundError
 from storage.types import DataType
+from storage.table import TableFile
+from typing import List, Optional
 
 class Planner:
     """
     Converts AST to Logical Plan.
     """
-    def __init__(self, catalog: Catalog):
+    def __init__(self, catalog: Catalog, system_catalog: Optional[SystemCatalog] = None, 
+                 current_db: Optional[Database] = None,
+                 search_path: List[int] = None):
         self.catalog = catalog
+        self.system_catalog = system_catalog
+        self.current_db = current_db
+        self.search_path = search_path or []
+        
+        self.resolver = None
+        if self.system_catalog:
+             self.resolver = Resolver(self.system_catalog)
+             # Critical: Pre-populate cache with current_db to see uncommitted DDL changes
+             if self.current_db:
+                 self.resolver._db_cache[self.current_db.oid] = self.current_db
+
+    def _get_table_schema(self, table_name: str):
+        if self.system_catalog and self.current_db:
+            try:
+                db, schema, table_info = self.resolver.resolve_table(
+                    table_name, self.current_db.oid, self.search_path
+                )
+                # Open table file to get schema
+                # path = schema.schema_dir / f"table_{table_info.oid}.tbl"
+                # But schema.schema_dir is strict Path?
+                # Schema object (Catalog) has schema_dir property?
+                # Resolving table returns (Database, Schema(Catalog), TableInfo)
+                # Schema object has .schema_dir (absolute Path)
+                schema_dir = schema.schema_dir
+                table_path = schema_dir / f"table_{table_info.oid}.tbl"
+                
+                tf = TableFile(str(table_path), None) # No buffer manager needed for just reading header?
+                tf.open()
+                schema = tf.schema
+                tf.close()
+                return schema
+            except (ObjectNotFoundError, FileNotFoundError):
+                 return None
+            except Exception as e:
+                 # Fallback or error?
+                 print(f"Planner warning: failed to resolve {table_name}: {e}")
+                 return None
+        else:
+            # Fallback to legacy
+            return self.catalog.get_table_schema(table_name)
 
     def plan(self, stmt: Statement) -> LogicalNode:
         """Create logical plan from statement."""
@@ -43,9 +90,16 @@ class Planner:
     def _plan_select(self, stmt: SelectStmt) -> LogicalNode:
         # 1. Source (FROM or Virtual)
         if stmt.from_table:
-            table_name = stmt.from_table.parts[0] # Handle schema later
+            # Handle qualified names?
+            # stmt.from_table is QualifiedName.
+            # We assume .parts joined by . or handle parts.
+            if isinstance(stmt.from_table, QualifiedName):
+                 table_name = ".".join(stmt.from_table.parts)
+            else:
+                 table_name = stmt.from_table # Should be str?
+            
             # Verify table exists
-            if not self.catalog.get_table_schema(table_name):
+            if not self._get_table_schema(table_name):
                  raise RuntimeError(f"Table '{table_name}' does not exist")
             node = LogicalScan(table_name, alias=None)
         else:
@@ -74,9 +128,12 @@ class Planner:
                 
                 # Fetch schema cols
                 # stmt.from_table is QualifiedName.
-                # Assuming simple table name for now.
-                tname = stmt.from_table.parts[0]
-                schema = self.catalog.get_table_schema(tname)
+                if isinstance(stmt.from_table, QualifiedName):
+                     tname = ".".join(stmt.from_table.parts)
+                else:
+                     tname = stmt.from_table
+                     
+                schema = self._get_table_schema(tname)
                 if not schema: raise RuntimeError(f"Table {tname} not found")
                 
                 for col in schema.columns:
@@ -106,7 +163,7 @@ class Planner:
 
     def _plan_insert(self, stmt: InsertStmt) -> LogicalNode:
         # Validate table
-        schema = self.catalog.get_table_schema(stmt.table_name)
+        schema = self._get_table_schema(stmt.table_name)
         if not schema:
             raise RuntimeError(f"Table '{stmt.table_name}' does not exist")
 
@@ -125,7 +182,7 @@ class Planner:
         return LogicalInsert(stmt.table_name, node, stmt.columns)
 
     def _plan_update(self, stmt: UpdateStmt) -> LogicalNode:
-        if not self.catalog.get_table_schema(stmt.table_name):
+        if not self._get_table_schema(stmt.table_name):
             raise RuntimeError(f"Table '{stmt.table_name}' does not exist")
             
         node = LogicalScan(stmt.table_name)
@@ -135,7 +192,7 @@ class Planner:
         return LogicalUpdate(stmt.table_name, node, stmt.assignments)
 
     def _plan_delete(self, stmt: DeleteStmt) -> LogicalNode:
-        if not self.catalog.get_table_schema(stmt.table_name):
+        if not self._get_table_schema(stmt.table_name):
             raise RuntimeError(f"Table '{stmt.table_name}' does not exist")
             
         node = LogicalScan(stmt.table_name)
@@ -145,6 +202,6 @@ class Planner:
         return LogicalDelete(stmt.table_name, node)
 
     def _plan_create_table(self, stmt: CreateTableStmt) -> LogicalNode:
-        if self.catalog.get_table_schema(stmt.table_name) and not stmt.if_not_exists:
+        if self._get_table_schema(stmt.table_name) and not stmt.if_not_exists:
              raise RuntimeError(f"Table '{stmt.table_name}' already exists")
         return LogicalCreate(stmt.table_name, stmt.columns, stmt.if_not_exists)
